@@ -67,9 +67,40 @@ export async function loadLibrary(): Promise<LibraryData> {
     return SEED_LIBRARY_DATA;
   }
 
+  const upgradeIfNeeded = async (data: LibraryData): Promise<LibraryData> => {
+    if ((data.version ?? 1) >= SEED_LIBRARY_DATA.version) {
+      return data;
+    }
+    const existingBookIds = new Set(data.books.map((b) => b.id));
+    const existingSessionIds = new Set(data.sessions.map((s) => s.id));
+    const existingConceptIds = new Set(data.concepts.map((c) => c.id));
+
+    const merged: LibraryData = {
+      version: SEED_LIBRARY_DATA.version,
+      books: [
+        ...data.books,
+        ...SEED_LIBRARY_DATA.books.filter((b) => !existingBookIds.has(b.id)),
+      ],
+      sessions: [
+        ...data.sessions,
+        ...SEED_LIBRARY_DATA.sessions.filter(
+          (s) => !existingSessionIds.has(s.id)
+        ),
+      ],
+      concepts: [
+        ...data.concepts,
+        ...SEED_LIBRARY_DATA.concepts.filter(
+          (c) => !existingConceptIds.has(c.id)
+        ),
+      ],
+    };
+    await saveLibrary(merged);
+    return merged;
+  };
+
   const idbData = await readFromIDB();
   if (idbData && Array.isArray(idbData.books)) {
-    return idbData;
+    return upgradeIfNeeded(idbData);
   }
 
   try {
@@ -77,8 +108,9 @@ export async function loadLibrary(): Promise<LibraryData> {
     if (raw) {
       const parsed = JSON.parse(raw) as LibraryData;
       if (Array.isArray(parsed.books)) {
-        await writeToIDB(parsed);
-        return parsed;
+        const upgraded = await upgradeIfNeeded(parsed);
+        await writeToIDB(upgraded);
+        return upgraded;
       }
     }
   } catch {
